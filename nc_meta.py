@@ -7,6 +7,7 @@ __author__ = 'Tian Gan'
 
 import json
 import netCDF4
+import re
 
 
 def get_nc_meta_json(nc_file_name):
@@ -28,7 +29,11 @@ def get_nc_meta_dict(nc_file_name):
     Return: the netCDF Dublincore and Type specific Metadata
     """
 
-    nc_dataset = get_nc_dataset(nc_file_name)
+    if isinstance(nc_file_name, netCDF4.Dataset):
+        nc_dataset = nc_file_name
+    else:
+        nc_dataset = get_nc_dataset(nc_file_name)
+
     dublin_core_meta = get_dublin_core_meta(nc_dataset)
     type_specific_meta = get_type_specific_meta(nc_dataset)
     nc_meta_dict = {'dublin_core_meta': dublin_core_meta, 'type_specific_meta': type_specific_meta}
@@ -107,8 +112,9 @@ def extract_nc_temporal_meta(nc_dataset):
     if nc_coordinate_variables.has_key('T'):
         nc_time_variable = nc_coordinate_variables['T']
         nc_time_data = nc_time_variable[:].tolist()
-        start = str(netCDF4.num2date(nc_time_data[0], units=nc_time_variable.units, calendar=nc_time_variable.calendar))
-        end = str(netCDF4.num2date(nc_time_data[-1], units=nc_time_variable.units, calendar=nc_time_variable.calendar))
+        nc_time_calendar = nc_time_variable.calendar if hasattr(nc_time_variable, 'calendar') else 'standard'
+        start = str(netCDF4.num2date(nc_time_data[0], units=nc_time_variable.units, calendar=nc_time_calendar))
+        end = str(netCDF4.num2date(nc_time_data[-1], units=nc_time_variable.units, calendar=nc_time_calendar))
         nc_temporal_meta = {'time_start': start, 'time_end': end}
     else:
         nc_temporal_meta = {}
@@ -168,9 +174,9 @@ def get_nc_data_variables(nc_dataset):
     Return: the netCDF variable objects which don't represent coordinate
     """
 
-    nc_all_variables = nc_dataset.variables
     nc_coordinate_variables = get_nc_coordinate_variables(nc_dataset)
     nc_data_variables = {}
+    nc_all_variables = nc_dataset.variables
     for var_name, var_obj in nc_all_variables.items():
         if (var_obj not in nc_coordinate_variables.values()) and (len(var_obj.shape) > 1):
             nc_data_variables[var_name] = var_obj
@@ -182,19 +188,64 @@ def get_nc_coordinate_variables(nc_dataset):
     """
     (object)-> dict
 
-    Return: the netCDF variables objects which represent coordinates.
-            (lat, lon, time, lat_bnd, lon_bnd, and auxiliary coordinate)
+    Return: the netCDF variables objects which represent coordinates and variables related to coordinates.
+            (lat, lon, time, vertical, lat_bnd, lon_bnd, etc...)
+    """
+
+    nc_coordinate_variables = {}
+    nc_dimension_variables = get_nc_dimension_variables(nc_dataset)
+    for var_name, var_obj in nc_dimension_variables.items():
+        coordinate_name = get_coordinate_name(var_obj)
+        if coordinate_name:
+            nc_coordinate_variables[coordinate_name] = var_obj
+        else:
+            nc_coordinate_variables[var_name] = var_obj
+
+    nc_all_variables = nc_dataset.variables
+    for var_name, var_obj in nc_coordinate_variables.items():
+        if hasattr(var_obj, u'bounds'):
+            nc_coordinate_variables[var_name + u'_bounds'] = nc_all_variables[var_obj.bounds]
+
+    return nc_coordinate_variables
+
+
+def get_nc_dimension_variables(nc_dataset):
+    """
+    (object)-> dict
+
+    Return netCDF 1D dimension variables whose dimension names are identical to their variable names
     """
 
     nc_all_variables = nc_dataset.variables
-    nc_coordinate_variables = {}
-    for variable in nc_all_variables.itervalues():
-        if hasattr(variable, 'axis'):
-            nc_coordinate_variables[variable.axis] = variable
-        if hasattr(variable, 'bounds'):
-            nc_coordinate_variables[variable.axis+u'_bounds'] = nc_all_variables[variable.bounds]
+    nc_dimension_variables = {}
+    for var_name, var_obj in nc_all_variables.items():
+        if len(var_obj.shape) == 1 and var_name == var_obj.dimensions[0]:
+            nc_dimension_variables[var_name] = var_obj
 
-    return nc_coordinate_variables
+    return nc_dimension_variables
+
+
+def get_coordinate_name(nc_variable):
+    """
+    (object)-> string
+
+    Return the coordinate name that the netCDF variable represents in one of the four names: X, Y, Z, T.
+    If not discerned as X, Y, Z, T
+    """
+
+    if hasattr(nc_variable, 'axis'):
+        return nc_variable.axis
+
+    if hasattr(nc_variable, 'standard_name'):
+        if re.match(nc_variable.standard_name, u'latitude', re.I):
+            return u'Y'
+        elif re.match(nc_variable.standard_name, u'longitude', re.I):
+            return u'X'
+        elif re.match(nc_variable.standard_name, u'time', re.I):
+            return u'T'
+
+    if hasattr(nc_variable, 'positive'):
+        return u'Z'
 
 
 def extract_nc_data_variables_meta(nc_data_variables):
