@@ -1,13 +1,15 @@
 """
-module provides functions to classify the variable types in netCDF dataset.
-- classify variable types representing: dimension, dimension bound, projection, scientific data
-- based on the variable types provide useful data or metadata of that variable
+Module provides utility functions to manipulate netCDF dataset.
+- classify variable types of coordinate, coordinate bound, grid mapping, scientific data, auxiliary coordinate
+- show original metadata of a variable
+-
 
 """
 __author__ = 'Tian Gan'
 
 
 import netCDF4
+import re
 from collections import OrderedDict
 
 
@@ -71,13 +73,49 @@ def get_nc_coordinate_variable_namelist(nc_dataset):
     return nc_coordinate_variable_namelist
 
 
-def get_nc_coordinate_variable_detail():
-    pass
+def get_nc_coordinate_variable_typelist(nc_dataset):
+    """
+    (object)-> dict
+
+    Return the coordinate name that the netCDF variable represents in one of the four names: X, Y, Z, T.
+    If not discerned as X, Y, Z, T, none is returned
+    """
+    nc_coordinate_variables = get_nc_coordinate_variables(nc_dataset)
+    nc_coordinate_variable_typelist = {}
+    for var_name, var_obj in nc_coordinate_variables.items():
+        nc_coordinate_variable_typelist[get_coordinate_variable_type(var_obj)] = var_name
+
+    return nc_coordinate_variable_typelist
+
+
+def get_coordinate_variable_type(nc_variable):
+    """
+    (object)-> string
+
+    Return the coordinate name that the netCDF variable represents in one of the four names: X, Y, Z, T.
+    If not discerned as X, Y, Z, T, Unknown is returned
+    """
+
+    if hasattr(nc_variable, 'axis'):
+        return nc_variable.axis
+
+    if hasattr(nc_variable, 'standard_name'):
+        if re.match(nc_variable.standard_name, u'latitude', re.I):
+            return u'Y'
+        elif re.match(nc_variable.standard_name, u'longitude', re.I):
+            return u'X'
+        elif re.match(nc_variable.standard_name, u'time', re.I):
+            return u'T'
+
+    if hasattr(nc_variable, 'positive'):
+        return u'Z'
+
+    return 'Unknown'
 
 
 # Functions for Coordinate Bound Variable ###########################################################################
 
-def get_nc_coordinate_bound_variables(nc_dataset):
+def get_nc_coordinate_bounds_variables(nc_dataset):
     """
     (object) -> dict
 
@@ -93,17 +131,33 @@ def get_nc_coordinate_bound_variables(nc_dataset):
     return nc_coordinate_bound_variables
 
 
-def get_nc_coordinate_bound_variable_namelist(nc_dataset):
+def get_nc_coordinate_bounds_variable_namelist(nc_dataset):
     """
     (object) -> list
 
     Return: the netCDF coordinate bound variable names
     """
-    nc_coordinate_bound_variables = get_nc_coordinate_bound_variables(nc_dataset)
+    nc_coordinate_bound_variables = get_nc_coordinate_bounds_variables(nc_dataset)
     nc_coordinate_bound_variable_namelist = list(nc_coordinate_bound_variables.keys())
 
     return nc_coordinate_bound_variable_namelist
 
+def get_nc_coordinate_bounds_variable_typelist(nc_dataset):
+    """
+    (object)-> dict
+
+    Return the coordinate bound name that the netCDF variable represents X_bounds, Y_bounds, Z_bounds, T_bounds.
+    If not discerned then Unknown_bounds is returned
+    """
+
+    nc_coordinate_variables = get_nc_coordinate_variables(nc_dataset)
+    nc_coordinate_bounds_variable_typelist = {}
+    for var_name, var_obj in nc_coordinate_variables.items():
+        coordinate_variable_type = get_coordinate_variable_type(var_obj)
+        if hasattr(var_obj, 'bounds'):
+            nc_coordinate_bounds_variable_typelist[coordinate_variable_type + '_bounds'] = var_obj.bounds
+
+    return nc_coordinate_bounds_variable_typelist
 
 # Function for Auxiliary Coordinate Variable ########################################################################
 
@@ -181,7 +235,7 @@ def get_nc_data_variables(nc_dataset):
     """
 
     nc_non_data_variables_namelist = get_nc_coordinate_variable_namelist(nc_dataset)\
-                              + get_nc_coordinate_bound_variable_namelist(nc_dataset)\
+                              + get_nc_coordinate_bounds_variable_namelist(nc_dataset)\
                               + get_nc_auxiliary_coordinate_variable_namelist(nc_dataset)
     nc_data_variables = {}
     for var_name, var_obj in nc_dataset.variables.items():
