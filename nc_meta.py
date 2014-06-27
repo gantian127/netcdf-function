@@ -95,9 +95,9 @@ def extract_nc_temporal_meta(nc_dataset):
 
     Return netCDF time start and end info
     """
-    nc_coordinate_variable_typelist = get_nc_coordinate_variable_typelist(nc_dataset)
-    if 'T' in list(nc_coordinate_variable_typelist.keys()):
-        nc_time_variable = nc_dataset.variables[nc_coordinate_variable_typelist['T']]
+    nc_coordinate_variables_mapping = get_nc_coordinate_variables_mapping(nc_dataset)
+    if 'T' in list(nc_coordinate_variables_mapping.keys()):
+        nc_time_variable = nc_dataset.variables[nc_coordinate_variables_mapping['T']]
         nc_time_calendar = nc_time_variable.calendar if hasattr(nc_time_variable, 'calendar') else 'standard'
         start = str(netCDF4.num2date(min(nc_time_variable[:]), units=nc_time_variable.units, calendar=nc_time_calendar))
         end = str(netCDF4.num2date(max(nc_time_variable[:]), units=nc_time_variable.units, calendar=nc_time_calendar))
@@ -116,10 +116,10 @@ def extract_nc_spatial_meta(nc_dataset):
     """
     nc_spatial_meta = {}
 
-    nc_coordinate_variable_typelist = get_nc_coordinate_variable_typelist(nc_dataset)
-    if 'X' in list(nc_coordinate_variable_typelist.keys()) and 'Y' in list(nc_coordinate_variable_typelist.keys()):
-        nc_x_variable = nc_dataset.variables[nc_coordinate_variable_typelist['X']]
-        nc_y_variable = nc_dataset.variables[nc_coordinate_variable_typelist['Y']]
+    nc_coordinate_variables_mapping = get_nc_coordinate_variables_mapping(nc_dataset)
+    if 'X' in list(nc_coordinate_variables_mapping.keys()) and 'Y' in list(nc_coordinate_variables_mapping.keys()):
+        nc_x_variable = nc_dataset.variables[nc_coordinate_variables_mapping['X']]
+        nc_y_variable = nc_dataset.variables[nc_coordinate_variables_mapping['Y']]
         nc_spatial_meta = {
             'x_min': nc_x_variable[:].tolist()[0],
             'x_max': nc_x_variable[:].tolist()[-1],
@@ -129,11 +129,11 @@ def extract_nc_spatial_meta(nc_dataset):
             'y_units': nc_y_variable.units if hasattr(nc_y_variable, 'units') else ''
         }
 
-    nc_coordinate_bounds_variable_typelist = get_nc_coordinate_bounds_variable_typelist(nc_dataset)
-    if 'X_bounds' in list(nc_coordinate_bounds_variable_typelist.keys()) \
-            and 'Y_bounds' in list(nc_coordinate_bounds_variable_typelist.keys()):
-        nc_x_bound_variable = nc_dataset.variables[nc_coordinate_bounds_variable_typelist['X_bounds']][:].tolist()
-        nc_y_bound_variable = nc_dataset.variables[nc_coordinate_bounds_variable_typelist['Y_bounds']][:].tolist()
+    nc_coordinate_bounds_variables_mapping = get_nc_coordinate_bounds_variables_mapping(nc_dataset)
+    if 'X_bounds' in list(nc_coordinate_bounds_variables_mapping.keys()) \
+            and 'Y_bounds' in list(nc_coordinate_bounds_variables_mapping.keys()):
+        nc_x_bound_variable = nc_dataset.variables[nc_coordinate_bounds_variables_mapping['X_bounds']][:].tolist()
+        nc_y_bound_variable = nc_dataset.variables[nc_coordinate_bounds_variables_mapping['Y_bounds']][:].tolist()
         nc_spatial_meta['x_min'] = nc_x_bound_variable[0][0]
         nc_spatial_meta['x_max'] = nc_x_bound_variable[-1][-1]
         nc_spatial_meta['y_min'] = nc_y_bound_variable[0][0]
