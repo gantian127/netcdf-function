@@ -1,13 +1,12 @@
 """
-python module extracts metadata from NetCDF file and return the metadata as a dictionary or json string.
-
+Module extracts metadata from NetCDF file to complete the required HydroShare NetCDF Science Metadata
 """
 __author__ = 'Tian Gan'
 
-
+from nc_utils import *
 import json
 import netCDF4
-import re
+
 
 
 def get_nc_meta_json(nc_file_name):
@@ -37,20 +36,9 @@ def get_nc_meta_dict(nc_file_name):
     dublin_core_meta = get_dublin_core_meta(nc_dataset)
     type_specific_meta = get_type_specific_meta(nc_dataset)
     nc_meta_dict = {'dublin_core_meta': dublin_core_meta, 'type_specific_meta': type_specific_meta}
-    nc_dataset.close
+    nc_dataset.close()
 
     return nc_meta_dict
-
-
-def get_nc_dataset(nc_file_name):
-    """
-    (string)-> object
-
-    Return: the netCDF dataset
-    """
-
-    nc_data = netCDF4.Dataset(nc_file_name, 'r')
-    return nc_data
 
 
 def get_dublin_core_meta(nc_dataset):
@@ -107,14 +95,12 @@ def extract_nc_temporal_meta(nc_dataset):
 
     Return netCDF time start and end info
     """
-
-    nc_coordinate_variables = get_nc_coordinate_variables(nc_dataset)
-    if nc_coordinate_variables.has_key('T'):
-        nc_time_variable = nc_coordinate_variables['T']
-        nc_time_data = nc_time_variable[:].tolist()
+    nc_coordinate_variable_typelist = get_nc_coordinate_variable_typelist(nc_dataset)
+    if 'T' in list(nc_coordinate_variable_typelist.keys()):
+        nc_time_variable = nc_dataset.variables[nc_coordinate_variable_typelist['T']]
         nc_time_calendar = nc_time_variable.calendar if hasattr(nc_time_variable, 'calendar') else 'standard'
-        start = str(netCDF4.num2date(nc_time_data[0], units=nc_time_variable.units, calendar=nc_time_calendar))
-        end = str(netCDF4.num2date(nc_time_data[-1], units=nc_time_variable.units, calendar=nc_time_calendar))
+        start = str(netCDF4.num2date(min(nc_time_variable[:]), units=nc_time_variable.units, calendar=nc_time_calendar))
+        end = str(netCDF4.num2date(max(nc_time_variable[:]), units=nc_time_variable.units, calendar=nc_time_calendar))
         nc_temporal_meta = {'time_start': start, 'time_end': end}
     else:
         nc_temporal_meta = {}
@@ -130,10 +116,10 @@ def extract_nc_spatial_meta(nc_dataset):
     """
     nc_spatial_meta = {}
 
-    nc_coordinate_variables = get_nc_coordinate_variables(nc_dataset)
-    if nc_coordinate_variables.has_key('X') and nc_coordinate_variables.has_key('Y'):
-        nc_x_variable = nc_coordinate_variables['X']
-        nc_y_variable = nc_coordinate_variables['Y']
+    nc_coordinate_variable_typelist = get_nc_coordinate_variable_typelist(nc_dataset)
+    if 'X' in list(nc_coordinate_variable_typelist.keys()) and 'Y' in list(nc_coordinate_variable_typelist.keys()):
+        nc_x_variable = nc_dataset.variables[nc_coordinate_variable_typelist['X']]
+        nc_y_variable = nc_dataset.variables[nc_coordinate_variable_typelist['Y']]
         nc_spatial_meta = {
             'x_min': nc_x_variable[:].tolist()[0],
             'x_max': nc_x_variable[:].tolist()[-1],
@@ -143,9 +129,11 @@ def extract_nc_spatial_meta(nc_dataset):
             'y_units': nc_y_variable.units if hasattr(nc_y_variable, 'units') else ''
         }
 
-    if nc_coordinate_variables.has_key('X_bounds') and nc_coordinate_variables.has_key('Y_bounds'):
-        nc_x_bound_variable = nc_coordinate_variables['X_bounds'][:].tolist()
-        nc_y_bound_variable = nc_coordinate_variables['Y_bounds'][:].tolist()
+    nc_coordinate_bounds_variable_typelist = get_nc_coordinate_bounds_variable_typelist(nc_dataset)
+    if 'X_bounds' in list(nc_coordinate_bounds_variable_typelist.keys()) \
+            and 'Y_bounds' in list(nc_coordinate_bounds_variable_typelist.keys()):
+        nc_x_bound_variable = nc_dataset.variables[nc_coordinate_bounds_variable_typelist['X_bounds']][:].tolist()
+        nc_y_bound_variable = nc_dataset.variables[nc_coordinate_bounds_variable_typelist['Y_bounds']][:].tolist()
         nc_spatial_meta['x_min'] = nc_x_bound_variable[0][0]
         nc_spatial_meta['x_max'] = nc_x_bound_variable[-1][-1]
         nc_spatial_meta['y_min'] = nc_y_bound_variable[0][0]
@@ -167,90 +155,13 @@ def get_type_specific_meta(nc_dataset):
     return type_specific_meta
 
 
-def get_nc_data_variables(nc_dataset):
-    """
-    (object) -> dict
-
-    Return: the netCDF variable objects which don't represent coordinate
-    """
-
-    nc_coordinate_variables = get_nc_coordinate_variables(nc_dataset)
-    nc_data_variables = {}
-    nc_all_variables = nc_dataset.variables
-    for var_name, var_obj in nc_all_variables.items():
-        if (var_obj not in nc_coordinate_variables.values()) and (len(var_obj.shape) > 1):
-            nc_data_variables[var_name] = var_obj
-
-    return nc_data_variables
-
-
-def get_nc_coordinate_variables(nc_dataset):
-    """
-    (object)-> dict
-
-    Return: the netCDF variables objects which represent coordinates and variables related to coordinates.
-            (lat, lon, time, vertical, lat_bnd, lon_bnd, etc...)
-    """
-
-    nc_coordinate_variables = {}
-    nc_dimension_variables = get_nc_dimension_variables(nc_dataset)
-    for var_name, var_obj in nc_dimension_variables.items():
-        coordinate_name = get_coordinate_name(var_obj)
-        if coordinate_name:
-            nc_coordinate_variables[coordinate_name] = var_obj
-        else:
-            nc_coordinate_variables[var_name] = var_obj
-
-    nc_all_variables = nc_dataset.variables
-    for var_name, var_obj in nc_coordinate_variables.items():
-        if hasattr(var_obj, u'bounds'):
-            nc_coordinate_variables[var_name + u'_bounds'] = nc_all_variables[var_obj.bounds]
-
-    return nc_coordinate_variables
-
-
-def get_nc_dimension_variables(nc_dataset):
-    """
-    (object)-> dict
-
-    Return netCDF 1D dimension variables whose dimension names are identical to their variable names
-    """
-
-    nc_all_variables = nc_dataset.variables
-    nc_dimension_variables = {}
-    for var_name, var_obj in nc_all_variables.items():
-        if len(var_obj.shape) == 1 and var_name == var_obj.dimensions[0]:
-            nc_dimension_variables[var_name] = var_obj
-
-    return nc_dimension_variables
-
-
-def get_coordinate_name(nc_variable):
-    """
-    (object)-> string
-
-    Return the coordinate name that the netCDF variable represents in one of the four names: X, Y, Z, T.
-    If not discerned as X, Y, Z, T
-    """
-
-    if hasattr(nc_variable, 'axis'):
-        return nc_variable.axis
-
-    if hasattr(nc_variable, 'standard_name'):
-        if re.match(nc_variable.standard_name, u'latitude', re.I):
-            return u'Y'
-        elif re.match(nc_variable.standard_name, u'longitude', re.I):
-            return u'X'
-        elif re.match(nc_variable.standard_name, u'time', re.I):
-            return u'T'
-
-    if hasattr(nc_variable, 'positive'):
-        return u'Z'
-
-
 def extract_nc_data_variables_meta(nc_data_variables):
-    nc_data_variables_meta = {}
+    """
+    (dict) -> dict
 
+    Return : the netCDF data variable metadata which are required by HS system.
+    """
+    nc_data_variables_meta = {}
     for var_name, var_obj in nc_data_variables.items():
         nc_data_variables_meta[var_name] = {
             'var_name': var_name,
@@ -262,3 +173,6 @@ def extract_nc_data_variables_meta(nc_data_variables):
         }
 
     return nc_data_variables_meta
+
+
+
