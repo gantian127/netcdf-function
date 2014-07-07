@@ -8,7 +8,6 @@ import json
 import netCDF4
 
 
-
 def get_nc_meta_json(nc_file_name):
     """
     (string)-> json string
@@ -49,9 +48,8 @@ def get_dublin_core_meta(nc_dataset):
     """
 
     nc_global_meta = extract_nc_global_meta(nc_dataset)
-    nc_temporal_meta = extract_nc_temporal_meta(nc_dataset)
-    nc_spatial_meta = extract_nc_spatial_meta(nc_dataset)
-    dublin_core_meta = dict(nc_global_meta.items() + nc_spatial_meta.items()+nc_temporal_meta.items())
+    nc_coverage_meta = extract_nc_coverage_meta(nc_dataset)
+    dublin_core_meta = dict(nc_global_meta.items() + nc_coverage_meta.items())
 
     return dublin_core_meta
 
@@ -89,57 +87,32 @@ def extract_nc_global_meta(nc_dataset):
     return nc_global_meta
 
 
-def extract_nc_temporal_meta(nc_dataset):
+def extract_nc_coverage_meta(nc_dataset):
     """
     (object)->dict
 
     Return netCDF time start and end info
     """
-    nc_coordinate_variables_mapping = get_nc_coordinate_variables_mapping(nc_dataset)
-    if 'T' in list(nc_coordinate_variables_mapping.keys()):
-        nc_time_variable = nc_dataset.variables[nc_coordinate_variables_mapping['T']]
-        nc_time_calendar = nc_time_variable.calendar if hasattr(nc_time_variable, 'calendar') else 'standard'
-        start = str(netCDF4.num2date(min(nc_time_variable[:]), units=nc_time_variable.units, calendar=nc_time_calendar))
-        end = str(netCDF4.num2date(max(nc_time_variable[:]), units=nc_time_variable.units, calendar=nc_time_calendar))
-        nc_temporal_meta = {'time_start': start, 'time_end': end}
-    else:
-        nc_temporal_meta = {}
 
-    return nc_temporal_meta
+    nc_coverage_meta = {}
+    nc_coordinate_variables_detail = get_nc_coordinate_variables_detail(nc_dataset)
 
-
-def extract_nc_spatial_meta(nc_dataset):
-    """
-    (object)->dict
-
-    Return netCDF spatial boundary info
-    """
-    nc_spatial_meta = {}
-
-    nc_coordinate_variables_mapping = get_nc_coordinate_variables_mapping(nc_dataset)
-    if 'X' in list(nc_coordinate_variables_mapping.keys()) and 'Y' in list(nc_coordinate_variables_mapping.keys()):
-        nc_x_variable = nc_dataset.variables[nc_coordinate_variables_mapping['X']]
-        nc_y_variable = nc_dataset.variables[nc_coordinate_variables_mapping['Y']]
-        nc_spatial_meta = {
-            'x_min': nc_x_variable[:].tolist()[0],
-            'x_max': nc_x_variable[:].tolist()[-1],
-            'x_units': nc_x_variable.units if hasattr(nc_x_variable, 'units') else '',
-            'y_min': nc_y_variable[:].tolist()[0],
-            'y_max': nc_y_variable[:].tolist()[-1],
-            'y_units': nc_y_variable.units if hasattr(nc_y_variable, 'units') else ''
+    for var_name, var_detail in nc_coordinate_variables_detail.items():
+        coor_type = var_detail['coordinate_type']
+        coor_info = {
+            coor_type + '_start': var_detail['coordinate_start'],
+            coor_type + '_end': var_detail['coordinate_end'],
+            coor_type + '_units': var_detail['coordinate_units']
         }
+        if coor_type == 'T':
+            nc_coverage_meta['temporal'] = coor_info
+        elif coor_type == 'X':
+            nc_coverage_meta['spatial_x'] = coor_info
+        elif coor_type == 'Y':
+            nc_coverage_meta['spatial_y'] = coor_info
+        ## ToDo consider the boundary variable info for spatial meta!
 
-    nc_coordinate_bounds_variables_mapping = get_nc_coordinate_bounds_variables_mapping(nc_dataset)
-    if 'X_bounds' in list(nc_coordinate_bounds_variables_mapping.keys()) \
-            and 'Y_bounds' in list(nc_coordinate_bounds_variables_mapping.keys()):
-        nc_x_bound_variable = nc_dataset.variables[nc_coordinate_bounds_variables_mapping['X_bounds']][:].tolist()
-        nc_y_bound_variable = nc_dataset.variables[nc_coordinate_bounds_variables_mapping['Y_bounds']][:].tolist()
-        nc_spatial_meta['x_min'] = nc_x_bound_variable[0][0]
-        nc_spatial_meta['x_max'] = nc_x_bound_variable[-1][-1]
-        nc_spatial_meta['y_min'] = nc_y_bound_variable[0][0]
-        nc_spatial_meta['y_max'] = nc_y_bound_variable[-1][-1]
-
-    return nc_spatial_meta
+    return nc_coverage_meta
 
 
 def get_type_specific_meta(nc_dataset):
